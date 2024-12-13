@@ -116,7 +116,7 @@ class CompanyMatcherService:
                 "raw_response": response.choices[0].message.content
             }
 
-    def get_company_matches(self, resume_text: str, preferences: Dict, num_matches: int = 2, min_score: float = 0.6) -> List[Dict]:
+    def get_company_matches(self, resume_text: str, preferences: Dict, num_matches: int = 1, min_score: float = 0.6) -> List[Dict]:
         print("\nDEBUG: Starting company matches search...")
         
         # Prepare search text
@@ -130,16 +130,19 @@ class CompanyMatcherService:
         # Search ChromaDB
         initial_matches = num_matches * 2
         print(f"DEBUG: Searching for {initial_matches} initial matches...")
+        
         results = self.collection.query(
             query_embeddings=[query_embedding],
             n_results=initial_matches
         )
+        print(f"DEBUG: Results: {results}")
         print(f"DEBUG: Found {len(results['documents'][0])} documents")
         
         # Process and score matches
         scored_matches = []
         for idx, company in enumerate(results['documents'][0]):
             print(f"\nDEBUG: Evaluating match {idx + 1}")
+            #print(f"DEBUG: Company: {company}")
             # Get LLM evaluation
             evaluation = self._evaluate_match(
                 resume_text=resume_text,

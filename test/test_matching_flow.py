@@ -6,6 +6,7 @@ class MatchingFlowTester:
     def __init__(self, base_url="http://localhost:5001"):
         self.base_url = base_url
         self.session_id = None
+        self.selected_company_name = None
         
     def test_upload_resume(self):
         print("\n1. Testing Resume Upload...")
@@ -68,24 +69,24 @@ class MatchingFlowTester:
         
         if response.status_code == 200:
             result = response.json()
-            print(f"DEBUG: Raw response: {result}")
             matches = result.get('matches', [])
-            print(f"DEBUG: Matches type: {type(matches)}")
-           # print(f"DEBUG: Matches content: {matches}")
             
             print(f"✓ Successfully retrieved {result['count']} matches")
             min_score_applied = result.get('min_score_applied', 'N/A')
-            print(f"✓ Minimum score applied: {min_score_applied}")  # Using .get() with default value
-        
+            print(f"✓ Minimum score applied: {min_score_applied}")
             
             if matches:
-                print("\nTop 3 matches:")
-                for idx, match in enumerate(matches['matches'][:2]):  # Access first 2 items of the list
+                print("\nTop matches:")
+                for idx, match in enumerate(matches['matches'][:1]):
                     print(f"\nMatch {idx + 1}:")
                     print(f"Company: {match.get('company_name', 'N/A')}")
                     print(f"Description: {match.get('company_description', 'N/A')}")
                     print(f"Final Score: {match.get('final_score', 0):.2f}")
                     print(f"Vector Similarity: {match.get('similarity_score', 0):.2f}")
+                    
+                    # Store the first company's name for outreach testing
+                    if idx == 0:
+                        self.selected_company_name = match.get('company_name')
                     
                     match_reasons = match.get('match_reasons', {})
                     print("\nMatch Reasons:")
@@ -100,9 +101,44 @@ class MatchingFlowTester:
         else:
             print(f"✗ Getting matches failed: {response.json()}")
             return False
+
+    def test_get_outreach_package(self):
+        print("\n4. Testing Outreach Package Generation...")
+        if not self.session_id or not self.selected_company_name:
+            print("✗ No session ID or company name available")
+            return False
+            
+        response = requests.post(
+            f"{self.base_url}/api/outreach",
+            json={
+                "session_id": self.session_id,
+                "company_name": self.selected_company_name
+            }
+        )
+        print(f"DEBUG: Response: {response}")
+        if response.status_code == 200:
+            result = response.json()
+            outreach_package = result.get('outreach_package', {})
+            
+            print("\nOutreach Package Generated:")
+            print(f"\nCompany: {outreach_package.get('company_name', 'N/A')}")
+            
+            print("\nContacts:")
+            for contact in outreach_package.get('contacts', []):
+                print(f"- {contact.get('name')} ({contact.get('role')})")
+                print(f"  Email: {contact.get('email')}")
+            
+            print("\nCover Letter Preview:")
+            cover_letter = outreach_package.get('cover_letter', '')
+            print(f"{cover_letter[:200]}...")  # Show first 200 characters
+            
+            return True
+        else:
+            print(f"✗ Outreach package generation failed: {response.json()}")
+            return False
             
     def test_error_cases(self):
-        print("\n4. Testing Error Cases...")
+        print("\n5. Testing Error Cases...")
         
         # Test invalid session ID
         print("\nTesting invalid session ID...")
@@ -127,7 +163,11 @@ def main():
         print("Stopping tests due to preferences submission failure")
         return
         
-    tester.test_get_matches()
+    if not tester.test_get_matches():
+        print("Stopping tests due to matching failure")
+        return
+        
+    tester.test_get_outreach_package()
     tester.test_error_cases()
 
 if __name__ == "__main__":

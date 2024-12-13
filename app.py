@@ -5,6 +5,11 @@ from datetime import datetime
 import PyPDF2
 import uuid
 from services.company_matcher import CompanyMatcherService
+from services.outreach_service import OutreachService
+from dotenv import load_dotenv
+import traceback
+
+load_dotenv()
 
 app = Flask(__name__)
 
@@ -20,6 +25,10 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 # In-memory session storage (replace with proper database in production)
 sessions = {}
 
+# Initialize services
+matcher_service = CompanyMatcherService()
+outreach_service = OutreachService()
+
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
@@ -28,7 +37,9 @@ def create_session():
     sessions[session_id] = {
         'resume_text': None,
         'preferences': None,
-        'uploaded_file': None
+        'uploaded_file': None,
+        'matches': None,
+        'outreach_packages': None
     }
     return session_id
 
@@ -136,7 +147,7 @@ def get_matches():
             resume_text=session_data['resume_text'],
             preferences=session_data['preferences']
         )
-        
+        sessions[session_id]['matches'] = matches
         return jsonify({
             'matches': matches,
             'count': len(matches)
@@ -145,6 +156,80 @@ def get_matches():
     except Exception as e:
         app.logger.error(f"Error getting matches: {str(e)}")
         return jsonify({'error': 'Failed to get company matches'}), 500
+
+@app.route('/api/outreach', methods=['POST'])
+def generate_outreach_package():
+    """
+    Generate outreach package (contacts and cover letter) for a selected company
+    """
+    try:
+        data = request.get_json()
+        session_id = data.get('session_id')
+        company_name = data.get('company_name')
+        print(f"DEBUG: Session ID: {session_id}")
+        print(f"DEBUG: Company Name: {company_name}")
+        if not session_id or not company_name:
+            return jsonify({
+                'error': 'Missing required parameters: session_id and company_name'
+            }), 400
+            
+        # Get session data
+        session_data = sessions[session_id]
+       
+        if not session_data:
+            return jsonify({'error': 'Invalid session ID'}), 400
+            
+        resume_text = session_data.get('resume_text')
+        preferences = session_data.get('preferences', {})
+        # Initialize outreach_packages if it doesn't exist
+        if 'outreach_packages' not in session_data or session_data['outreach_packages'] is None:
+            session_data['outreach_packages'] = {}
+         
+        # Get company info from previous matches
+        matches = session_data.get('matches', {})
+        matches = matches.get('matches', [])
+        
+        company_info = None
+        for match in matches:
+            if match.get('company_name') == company_name:
+                company_info = {
+                    'company_name': match.get('company_name'),
+                    'company_description': match.get('company_description'),
+                    'industry': match.get('metadata', {}).get('industry'),
+                }
+                break
+                
+        if not company_info:
+            return jsonify({'error': 'Company not found in matches'}), 404
+            
+        # Generate outreach package
+        outreach_package = outreach_service.get_outreach_package(
+            resume_text=resume_text,
+            company_info=company_info,
+            role_preference=preferences.get('desired_roles', [''])[0]
+        )
+        print(f"DEBUG: Outreach Package: {outreach_package}")
+        # Store the outreach package in session data (optional)
+        session_data['outreach_packages'] = session_data.get('outreach_packages', {})
+        session_data['outreach_packages'][company_name] = outreach_package
+        
+        return jsonify({
+            'success': True,
+            'outreach_package': {
+                'company_name': company_info['company_name'],
+                'contacts': outreach_package['contacts'],
+                'cover_letter': outreach_package['cover_letter']
+            }
+        })
+        
+    except Exception as e:
+        print("Full traceback:")
+        traceback.print_exc()
+        return jsonify({
+            'error': 'Failed to generate outreach package',
+            'details': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001)
