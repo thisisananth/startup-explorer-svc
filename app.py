@@ -8,8 +8,14 @@ from services import CompanyMatcherService, OutreachService
 from dotenv import load_dotenv
 import traceback
 from flask_cors import CORS
+import logging
+import json
 
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -21,6 +27,49 @@ cors = CORS(app, resources={
         "allow_headers": ["Content-Type", "Accept"]
     }
 })
+
+@app.before_request
+def log_request_info():
+    logger.debug('Headers: %s', dict(request.headers))
+    logger.debug('Body: %s', request.get_data())
+    logger.debug('Args: %s', dict(request.args))
+    if request.is_json:
+        logger.debug('JSON: %s', request.get_json())
+
+@app.after_request
+def after_request(response):
+    logger.debug('Response Status: %s', response.status)
+    logger.debug('Response Headers: %s', dict(response.headers))
+    logger.debug('Response Body: %s', response.get_data())
+    
+    response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Accept')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
+
+@app.errorhandler(400)
+def handle_bad_request(e):
+    logger.error('Bad Request: %s', str(e))
+    logger.error('Request data: %s', request.get_data())
+    return jsonify({
+        'error': 'Bad Request',
+        'message': str(e),
+        'request_data': {
+            'headers': dict(request.headers),
+            'body': request.get_data().decode('utf-8'),
+            'args': dict(request.args)
+        }
+    }), 400
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    logger.error('Unhandled Exception: %s', str(e))
+    logger.error('Traceback: %s', traceback.format_exc())
+    return jsonify({
+        'error': 'Internal Server Error',
+        'message': str(e),
+        'traceback': traceback.format_exc()
+    }), 500
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'
@@ -54,75 +103,94 @@ def create_session():
 
 @app.route('/uploadResume', methods=['POST'])
 def upload_resume():
-    if 'resume' not in request.files:
-        return jsonify({'error': 'No resume file provided'}), 400
-    
-    file = request.files['resume']
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
-    
-    if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        unique_filename = f"{timestamp}_{filename}"
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
-        file.save(filepath)
+    try:
+        logger.info('Processing resume upload')
+        if 'resume' not in request.files:
+            logger.error('No resume file in request')
+            return jsonify({'error': 'No resume file uploaded'}), 400
+            
+        file = request.files['resume']
+        logger.debug('Received file: %s', file.filename)
         
-        # Extract text from PDF if it's a PDF file
-        resume_text = ""
-        if filename.lower().endswith('.pdf'):
-            try:
-                with open(filepath, 'rb') as pdf_file:
-                    pdf_reader = PyPDF2.PdfReader(pdf_file)
-                    for page in pdf_reader.pages:
-                        resume_text += page.extract_text()
-            except Exception as e:
-                return jsonify({'error': f'Error processing PDF: {str(e)}'}), 500
+        if file.filename == '':
+            return jsonify({'error': 'No selected file'}), 400
         
-        # Create a new session and store resume data
-        session_id = create_session()
-        sessions[session_id]['resume_text'] = resume_text
-        sessions[session_id]['uploaded_file'] = unique_filename
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            unique_filename = f"{timestamp}_{filename}"
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+            file.save(filepath)
+            
+            # Extract text from PDF if it's a PDF file
+            resume_text = ""
+            if filename.lower().endswith('.pdf'):
+                try:
+                    with open(filepath, 'rb') as pdf_file:
+                        pdf_reader = PyPDF2.PdfReader(pdf_file)
+                        for page in pdf_reader.pages:
+                            resume_text += page.extract_text()
+                except Exception as e:
+                    return jsonify({'error': f'Error processing PDF: {str(e)}'}), 500
+            
+            # Create a new session and store resume data
+            session_id = create_session()
+            sessions[session_id]['resume_text'] = resume_text
+            sessions[session_id]['uploaded_file'] = unique_filename
+            
+            return jsonify({
+                'message': 'Resume uploaded successfully',
+                'filename': unique_filename,
+                'resume_text': resume_text,
+                'session_id': session_id
+            }), 200
         
-        return jsonify({
-            'message': 'Resume uploaded successfully',
-            'filename': unique_filename,
-            'resume_text': resume_text,
-            'session_id': session_id
-        }), 200
+        return jsonify({'error': 'Invalid file type'}), 400
     
-    return jsonify({'error': 'Invalid file type'}), 400
+    except Exception as e:
+        logger.error('Error in upload_resume: %s', str(e))
+        logger.error('Traceback: %s', traceback.format_exc())
+        raise
 
 @app.route('/submitPreferences', methods=['POST'])
 def submit_preferences():
-    data = request.get_json()
-    session_id = data.get('session_id')
+    try:
+        logger.info('Processing preferences submission')
+        data = request.json
+        logger.debug('Received preferences data: %s', json.dumps(data, indent=2))
+        
+        session_id = data.get('session_id')
+        
+        if not session_id or session_id not in sessions:
+            return jsonify({'error': 'Invalid or missing session ID'}), 400
+        
+        required_fields = ['desired_roles', 'industries', 'work_locations', 'company_stages']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({'error': f'Missing required field: {field}'}), 400
+            if not isinstance(data[field], list):
+                return jsonify({'error': f'{field} must be an array'}), 400
+        
+        preferences = {
+            'desired_roles': data['desired_roles'],
+            'industries': data['industries'],
+            'work_locations': data['work_locations'],
+            'company_stages': data['company_stages']
+        }
+        
+        # Store preferences in session
+        sessions[session_id]['preferences'] = preferences
+        
+        return jsonify({
+            'message': 'Preferences submitted successfully',
+            'session_id': session_id,
+            'preferences': preferences
+        }), 200
     
-    if not session_id or session_id not in sessions:
-        return jsonify({'error': 'Invalid or missing session ID'}), 400
-    
-    required_fields = ['desired_roles', 'industries', 'work_locations', 'company_stages']
-    for field in required_fields:
-        if field not in data:
-            return jsonify({'error': f'Missing required field: {field}'}), 400
-        if not isinstance(data[field], list):
-            return jsonify({'error': f'{field} must be an array'}), 400
-    
-    preferences = {
-        'desired_roles': data['desired_roles'],
-        'industries': data['industries'],
-        'work_locations': data['work_locations'],
-        'company_stages': data['company_stages']
-    }
-    
-    # Store preferences in session
-    sessions[session_id]['preferences'] = preferences
-    
-    return jsonify({
-        'message': 'Preferences submitted successfully',
-        'session_id': session_id,
-        'preferences': preferences
-    }), 200
+    except Exception as e:
+        logger.error('Error in submit_preferences: %s', str(e))
+        logger.error('Traceback: %s', traceback.format_exc())
+        raise
 
 @app.route('/getSessionData', methods=['GET'])
 def get_session_data():
@@ -137,34 +205,42 @@ def get_session_data():
 
 @app.route('/api/matches', methods=['GET'])
 def get_matches():
-    session_id = request.args.get('session_id')
-    
-    if not session_id or session_id not in sessions:
-        return jsonify({'error': 'Invalid or missing session ID'}), 400
-    
-    session_data = sessions[session_id]
-    
-    if not session_data['resume_text']:
-        return jsonify({'error': 'No resume found. Please upload a resume first.'}), 400
-    
-    if not session_data['preferences']:
-        return jsonify({'error': 'No preferences found. Please set preferences first.'}), 400
-
     try:
-        matcher = CompanyMatcherService()
-        matches = matcher.get_company_matches(
-            resume_text=session_data['resume_text'],
-            preferences=session_data['preferences']
-        )
-        sessions[session_id]['matches'] = matches
-        return jsonify({
-            'matches': matches,
-            'count': len(matches)
-        })
+        logger.info('Processing get matches request')
+        session_id = request.args.get('session_id')
+        logger.debug('Session ID: %s', session_id)
+        
+        if not session_id or session_id not in sessions:
+            return jsonify({'error': 'Invalid or missing session ID'}), 400
+        
+        session_data = sessions[session_id]
+        
+        if not session_data['resume_text']:
+            return jsonify({'error': 'No resume found. Please upload a resume first.'}), 400
+        
+        if not session_data['preferences']:
+            return jsonify({'error': 'No preferences found. Please set preferences first.'}), 400
+
+        try:
+            matcher = CompanyMatcherService()
+            matches = matcher.get_company_matches(
+                resume_text=session_data['resume_text'],
+                preferences=session_data['preferences']
+            )
+            sessions[session_id]['matches'] = matches
+            return jsonify({
+                'matches': matches,
+                'count': len(matches)
+            })
+        
+        except Exception as e:
+            app.logger.error(f"Error getting matches: {str(e)}")
+            return jsonify({'error': 'Failed to get company matches'}), 500
     
     except Exception as e:
-        app.logger.error(f"Error getting matches: {str(e)}")
-        return jsonify({'error': 'Failed to get company matches'}), 500
+        logger.error('Error in get_matches: %s', str(e))
+        logger.error('Traceback: %s', traceback.format_exc())
+        raise
 
 @app.route('/api/outreach', methods=['POST'])
 def generate_outreach_package():
@@ -172,7 +248,10 @@ def generate_outreach_package():
     Generate outreach package (contacts and cover letter) for a selected company
     """
     try:
-        data = request.get_json()
+        logger.info('Processing outreach package generation')
+        data = request.json
+        logger.debug('Received data: %s', json.dumps(data, indent=2))
+        
         session_id = data.get('session_id')
         company_name = data.get('company_name')
         print(f"DEBUG: Session ID: {session_id}")
@@ -232,14 +311,10 @@ def generate_outreach_package():
         })
         
     except Exception as e:
-        print("Full traceback:")
-        traceback.print_exc()
-        return jsonify({
-            'error': 'Failed to generate outreach package',
-            'details': str(e),
-            'traceback': traceback.format_exc()
-        }), 500
+        logger.error('Error in generate_outreach_package: %s', str(e))
+        logger.error('Traceback: %s', traceback.format_exc())
+        raise
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port, debug=True)
