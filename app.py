@@ -4,8 +4,7 @@ import os
 from datetime import datetime
 import PyPDF2
 import uuid
-from services.company_matcher import CompanyMatcherService
-from services.outreach_service import OutreachService
+from services import CompanyMatcherService, OutreachService
 from dotenv import load_dotenv
 import traceback
 
@@ -232,4 +231,5 @@ def generate_outreach_package():
         }), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5001)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)

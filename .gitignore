@@ -61,3 +61,5 @@ dmypy.json
 # Pytest
 .pytest_cache/ 
 uploads/20241211_175400_test_resume.pdf
+
+venv_clean/

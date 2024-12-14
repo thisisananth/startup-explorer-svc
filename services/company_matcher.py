@@ -10,7 +10,7 @@ class CompanyMatcherService:
     def __init__(self):
         self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         self.chroma_client = chromadb.PersistentClient(
-            path=os.getenv("CHROMA_DB_PATH", "/Users/ananth/startup-explorer/chroma_db")
+            path=os.getenv("CHROMA_DB_PATH", "./data/chromadb")
         )
         self.collection = self.chroma_client.get_collection("startup_press_releases")
 
