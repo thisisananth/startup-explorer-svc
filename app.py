@@ -7,10 +7,20 @@ import uuid
 from services import CompanyMatcherService, OutreachService
 from dotenv import load_dotenv
 import traceback
+from flask_cors import CORS
 
 load_dotenv()
 
 app = Flask(__name__)
+
+# Configure CORS
+cors = CORS(app, resources={
+    r"/*": {
+        "origins": ["http://localhost:3000"],
+        "methods": ["POST", "GET", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Accept"]
+    }
+})
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'

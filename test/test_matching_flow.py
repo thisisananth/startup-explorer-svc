@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 class MatchingFlowTester:
-    def __init__(self, base_url="http://localhost:5001"):
+    def __init__(self, base_url="https://startup-explorer-svc.onrender.com"):
         self.base_url = base_url
         self.session_id = None
         self.selected_company_name = None
