@@ -22,7 +22,10 @@ app = Flask(__name__)
 # Configure CORS
 cors = CORS(app, resources={
     r"/*": {
-        "origins": ["http://localhost:3000"],
+        "origins": [
+            "http://localhost:3000",  # Keep local development
+            "https://resume-matcher-lilac.vercel.app"  # Add Vercel domain
+        ],
         "methods": ["POST", "GET", "OPTIONS"],
         "allow_headers": ["Content-Type", "Accept"]
     }
@@ -42,7 +45,9 @@ def after_request(response):
     logger.debug('Response Headers: %s', dict(response.headers))
     logger.debug('Response Body: %s', response.get_data())
     
-    response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+    origin = request.headers.get('Origin')
+    if origin in ["http://localhost:3000", "https://resume-matcher-lilac.vercel.app"]:
+        response.headers.add('Access-Control-Allow-Origin', origin)
     response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Accept')
     response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
     return response
