@@ -116,7 +116,7 @@ class CompanyMatcherService:
                 "raw_response": response.choices[0].message.content
             }
 
-    def get_company_matches(self, resume_text: str, preferences: Dict, num_matches: int = 1, min_score: float = 0.6) -> List[Dict]:
+    def get_company_matches(self, resume_text: str, preferences: Dict, num_matches: int = 3, min_score: float = 0.6) -> List[Dict]:
         print("\nDEBUG: Starting company matches search...")
         
         # Prepare search text
