@@ -320,6 +320,13 @@ def generate_outreach_package():
         logger.error('Traceback: %s', traceback.format_exc())
         raise
 
+@app.route('/')
+def health_check():
+    return jsonify({
+        'status': 'healthy',
+        'message': 'Startup Explorer Service is running'
+    })
+
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port, debug=True)
