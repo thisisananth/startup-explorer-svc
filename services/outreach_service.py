@@ -70,41 +70,36 @@ class OutreachService:
                 }
             ]
 
-    def generate_cover_letter(self, 
-                            resume_text: str, 
-                            company_info: Dict,
-                            role_preference: str) -> str:
-        """
-        Generate a customized cover letter using GPT-4
-        """
+    def _generate_cover_letter(self, resume_text: str, company_info: Dict, role: str) -> str:
         prompt = f"""
-        Write a compelling cover letter based on this information:
-
+        Write a professional cover letter for a job application based on the following information.
+        Do not include the date or company address. Start directly with "Dear Hiring Manager," 
+        
         RESUME:
         {resume_text}
 
         COMPANY:
-        Name: {company_info.get('company_name')}
-        Description: {company_info.get('company_description')}
-        Industry: {company_info.get('industry')}
+        {company_info['company_name']}
+        {company_info.get('company_description', '')}
+        Industry: {company_info.get('industry', 'Technology')}
 
-        DESIRED ROLE: {role_preference}
+        DESIRED ROLE:
+        {role}
 
-        Write a professional cover letter that:
-        1. Shows genuine interest in the company's mission
-        2. Connects the candidate's experience to the company's needs
-        3. Highlights relevant achievements from the resume
-        4. Demonstrates knowledge of the company
-        5. Keeps the tone professional but enthusiastic
-        6. Is concise (250-300 words)
+        Write a concise, compelling cover letter that:
+        1. Shows enthusiasm for the company and role
+        2. Highlights relevant experience from the resume
+        3. Demonstrates understanding of the company's business
+        4. Explains why you're a good fit
+        5. Ends with a professional closing
 
-        Format the letter properly with today's date and proper business letter structure.
+        Keep the tone professional but conversational.
         """
 
         response = self.client.chat.completions.create(
             model="gpt-4",
             messages=[
-                {"role": "system", "content": "You are an expert at writing compelling cover letters that help candidates stand out."},
+                {"role": "system", "content": "You are an expert at writing compelling cover letters."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7
@@ -126,7 +121,7 @@ class OutreachService:
         )
         
         # Generate cover letter
-        cover_letter = self.generate_cover_letter(
+        cover_letter = self._generate_cover_letter(
             resume_text,
             company_info,
             role_preference
